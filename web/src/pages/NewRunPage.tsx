@@ -8,7 +8,7 @@ export function NewRunPage() {
   const [repo, setRepo] = useState("");
   const [ref, setRef] = useState("refs/heads/main");
   const [workflowPath, setWorkflowPath] = useState(
-    ".github/workflows/ci.yml",
+    ".github/workflows/multi-job-test.yml",
   );
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -42,7 +42,7 @@ export function NewRunPage() {
             required
             value={repo}
             onChange={(e) => setRepo(e.target.value)}
-            placeholder="owner/name"
+            placeholder="chuan99nd/drassi-platform"
             style={inputStyle}
           />
         </label>
@@ -62,7 +62,7 @@ export function NewRunPage() {
             required
             value={workflowPath}
             onChange={(e) => setWorkflowPath(e.target.value)}
-            placeholder=".github/workflows/ci.yml"
+            placeholder=".github/workflows/multi-job-test.yml"
             style={inputStyle}
           />
         </label>

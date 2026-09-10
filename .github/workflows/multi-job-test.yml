@@ -1,0 +1,73 @@
+name: Drassi Multi-Job Smoke Test
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  shell-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo hello
+        run: echo "hello from drassi"
+
+      - name: Show uname
+        run: uname -a
+
+      - name: Simple calculation
+        run: echo "2 + 2 = $((2 + 2))"
+
+      - name: Environment info
+        run: |
+          echo "pwd: $(pwd)"
+          echo "user: $(whoami)"
+          echo "date: $(date -u)"
+
+  node-action:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Node version
+        run: node --version
+
+      - name: Run inline node script
+        run: node -e "console.log('sum:', 21 + 21)"
+
+  python-action:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python version
+        run: python3 --version
+
+      - name: Run inline python script
+        run: python3 -c "print('square:', 6 * 6)"
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Write a throwaway Dockerfile
+        run: |
+          cat > Dockerfile <<'EOF'
+          FROM alpine:3.19
+          RUN echo "built by drassi" > /hello.txt
+          CMD ["cat", "/hello.txt"]
+          EOF
+
+      - name: Docker build (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: drassi-multi-job-test:local
