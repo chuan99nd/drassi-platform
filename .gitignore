@@ -1,0 +1,15 @@
+# secrets / local env
+.env
+.env.local
+
+# node / frontend build
+node_modules/
+dist/
+
+# go / build output
+/bin/
+*.out
+
+# misc
+*.log
+.DS_Store

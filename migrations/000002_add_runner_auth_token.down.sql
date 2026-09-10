@@ -1,0 +1,1 @@
+ALTER TABLE runners DROP COLUMN IF EXISTS auth_token;

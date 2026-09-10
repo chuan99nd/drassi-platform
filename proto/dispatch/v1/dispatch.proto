@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package dispatch.v1;
+
+option go_package = "github.com/chuan99nd/drassi-platform/pkg/dispatchpb;dispatchpb";
+
+// Dispatch is the runner-facing control plane. Every RPC is dialed OUT by the
+// runner, so runners need no inbound ports (pull-based model). Secure the
+// channel with mTLS in production; the runner also presents the auth_token it
+// received at registration.
+service Dispatch {
+  // RegisterRunner announces a runner and returns its identity + auth token.
+  rpc RegisterRunner(RegisterRunnerRequest) returns (RegisterRunnerResponse);
+
+  // AcquireJob is a server-stream: the orchestrator pushes one JobLease per
+  // free slot as jobs become runnable. The runner keeps this open.
+  rpc AcquireJob(AcquireJobRequest) returns (stream JobLease);
+
+  // Heartbeat is bidirectional: pings renew leases + report liveness; acks may
+  // carry control signals (e.g. cancel a lease).
+  rpc Heartbeat(stream HeartbeatPing) returns (stream HeartbeatAck);
+
+  // ReportStatus records a per-step (or job) state transition.
+  rpc ReportStatus(StatusUpdate) returns (StatusAck);
+
+  // StreamLogs is a client-stream of ordered log chunks for one lease.
+  rpc StreamLogs(stream LogChunk) returns (LogAck);
+
+  // CompleteJob finalizes a lease with its result and outputs.
+  rpc CompleteJob(CompleteJobRequest) returns (CompleteJobResponse);
+}
+
+enum RunnerMode {
+  RUNNER_MODE_UNSPECIFIED = 0;
+  RUNNER_MODE_HOST = 1;
+  RUNNER_MODE_DOCKER = 2;
+  RUNNER_MODE_K8S = 3;
+}
+
+message RegisterRunnerRequest {
+  string name = 1;
+  repeated string labels = 2;
+  RunnerMode mode = 3;
+  int32 capacity = 4; // max concurrent jobs
+  string version = 5;
+}
+
+message RegisterRunnerResponse {
+  string runner_id = 1;
+  string auth_token = 2;
+  int32 heartbeat_interval_seconds = 3;
+}
+
+message AcquireJobRequest {
+  string runner_id = 1;
+  int32 free_slots = 2;
+}
+
+// NeedOutputs carries a completed upstream job's distilled result so the runner
+// can hydrate wf.Jobs[need].Outputs / .Result before executing (cross-machine
+// needs bridge).
+message NeedOutputs {
+  string result = 1; // success|failure|cancelled|skipped
+  map<string, string> outputs = 2;
+}
+
+// JobLease is a single job to run. It carries the verbatim workflow YAML plus
+// which job_id + matrix cell — the runner re-parses the YAML to rebuild an
+// identical model.Workflow. It never contains other jobs' steps or the DAG.
+message JobLease {
+  string lease_id = 1;
+  string job_run_id = 2; // orchestrator "jobs" row id
+  string workflow_yaml = 3;
+  string job_id = 4; // key in workflow.jobs
+  string matrix_cell_json = 5; // JSON object for this matrix cell, or ""
+  string event_name = 6; // push|pull_request|manual...
+  string event_json = 7; // github.event.* payload
+  string repo_url = 8;
+  string ref = 9;
+  string sha = 10;
+  string actor = 11;
+  map<string, string> env = 12;
+  map<string, string> vars = 13;
+  map<string, string> secrets = 14;
+  map<string, NeedOutputs> needs_outputs = 15; // keyed by need job_id
+  int64 lease_deadline_unix = 16;
+}
+
+message HeartbeatPing {
+  string runner_id = 1;
+  repeated string active_lease_ids = 2;
+}
+
+message HeartbeatAck {
+  int32 next_interval_seconds = 1;
+  repeated string cancel_lease_ids = 2; // orchestrator asks runner to cancel these
+}
+
+enum Phase {
+  PHASE_UNSPECIFIED = 0;
+  PHASE_PENDING = 1;
+  PHASE_RUNNING = 2;
+  PHASE_SUCCESS = 3;
+  PHASE_FAILURE = 4;
+  PHASE_SKIPPED = 5;
+  PHASE_CANCELLED = 6;
+}
+
+message StatusUpdate {
+  string lease_id = 1;
+  string step_id = 2; // "" for job-level
+  int32 step_index = 3;
+  string step_name = 4;
+  Phase phase = 5;
+  int64 ts_unix = 6;
+}
+
+message StatusAck {}
+
+message LogChunk {
+  string lease_id = 1;
+  string step_id = 2;
+  int64 seq = 3; // monotonic per lease, for ordering + idempotent append
+  int64 ts_unix = 4;
+  bytes data = 5;
+}
+
+message LogAck {}
+
+message CompleteJobRequest {
+  string lease_id = 1;
+  Phase result = 2; // SUCCESS|FAILURE|CANCELLED
+  map<string, string> outputs = 3;
+  string error_summary = 4;
+}
+
+message CompleteJobResponse {}

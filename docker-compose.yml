@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-drassi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-drassi}
+      POSTGRES_DB: ${POSTGRES_DB:-drassi}
+    ports:
+      - "5432:5432"
+    volumes:
+      - drassi_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-drassi} -d ${POSTGRES_DB:-drassi}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  minio:
+    # Pinned dated tag for reproducibility. Provisioned now for M5 (artifacts/cache); not
+    # consumed by any M0 task.
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-drassi}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-drassi123}
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Console
+    volumes:
+      - drassi_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  gitlab:
+    # Local GitLab CE instance for exercising the internal/gitlab webhook/client code
+    # end-to-end (T-M2-04 follow-up / M6 native GitLab). Heavy: needs a few minutes to
+    # become healthy and several GB of RAM.
+    image: gitlab/gitlab-ce:17.6.2-ce.0
+    restart: unless-stopped
+    hostname: localhost
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost:8929'
+        gitlab_rails['gitlab_shell_ssh_port'] = 2224
+    ports:
+      - "8929:8929" # Web UI / API
+      - "2224:22"   # git over SSH
+    volumes:
+      - drassi_gitlab_config:/etc/gitlab
+      - drassi_gitlab_logs:/var/log/gitlab
+      - drassi_gitlab_data:/var/opt/gitlab
+    shm_size: "256m"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8929/-/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+
+volumes:
+  drassi_postgres_data:
+  drassi_minio_data:
+  drassi_gitlab_config:
+  drassi_gitlab_logs:
+  drassi_gitlab_data:
